@@ -74,7 +74,7 @@ func tarStreamWriter() {
     let wtfStream = InputStream(data: dat)
     guard let readStream = InputStream(url: url) else { return }
     
-    let tar = Tar()
+    let tar = TarStream()
     let archive = tar.archive()
     
     // This will add an entry to the archive but won't finalize it.
@@ -149,7 +149,7 @@ func tarStreamReader() {
     }
     
     myStreamer = HttpStreamer(url: url)
-    let tarParser = Tar()
+    let tarParser = TarStream()
     
     /// The entry handler is called with the found header and a stream containing the
     /// data the header refers to. The nextEntry callback is called when the entry handler
