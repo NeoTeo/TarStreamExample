@@ -9,6 +9,8 @@
 import Foundation
 import CallbackStreams
 import TarStream
+import HttpStream
+
 
 let host = "127.0.0.1"
 let port = 5001
@@ -20,7 +22,7 @@ let hash = "QmdScyjK1F8fuoLyW8wyV4rD64dLduUXb2sbRudxWf9Kwj"	/// B Russell txt
 //let hash = "QmbTUKre4rFZUCvksbhAKbbMfzGKyb6Kxb9hT342Q9sTBo" /// dir containing dir
 
 let query = "/api/v0/get?arg=\(hash)"
-var myStreamer: HttpStreamer!
+var myStreamer: HttpStream!
 var teoStream: InputStream!
 
 func main() {
@@ -147,8 +149,8 @@ func tarStreamReader() {
         print("Invalid URL")
         return
     }
-    
-    myStreamer = HttpStreamer(url: url)
+    let httpStreamer = HttpStream()
+	guard let readStream = httpStreamer.getReadStream(for: url) else { fatalError("Could not get read stream.") }
     let tarParser = TarStream()
     
     /// The entry handler is called with the found header and a stream containing the
@@ -189,13 +191,13 @@ func tarStreamReader() {
     }
     
     tarParser.endHandler = {
-        myStreamer.session.finishTasksAndInvalidate()
+        httpStreamer.finish()
         
         exit(EXIT_SUCCESS)
     }
     
     /// Hook up the streams.
-    tarParser.setInputStream(tarStream: myStreamer.inputStream!)
+    tarParser.setInputStream(tarStream: readStream)
 }
 
 
