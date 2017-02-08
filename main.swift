@@ -27,18 +27,27 @@ var teoStream: InputStream!
 
 func main() {
     
-    	tarStreamReader()
-//    tarStreamReader2()
-    //teotest()
+//	tarStreamReader(host: host, port: port, query: query)
+
+    addAndRemoveHandlers()
+	
     //	tarStreamWriter()
-    //	testy()
+	
+    //	simplePipe()
     
     CFRunLoopRun()
 }
 
 
+/**
+	This function shows how multiple handlers can be associated with a given event.
+	It also shows how a handler can be removed from a stream by setting its associated handler to nil.
 
-func teotest() {
+	Note that ppipe exits as soon as it receives its endOfStream event. If it is the first to receive it
+	it will be the only endOfStream event to be called despite multiple callbacks being registered.
+**/
+func addAndRemoveHandlers() {
+	
     guard let dat = "teotest".data(using: .ascii) else { return }
     teoStream = InputStream(data: dat)
     teoStream.on(event: .openCompleted) {
@@ -49,34 +58,47 @@ func teotest() {
         print("haz")
     }
     
-    let oc = teoStream.on(event: .errorOccurred) {
+    teoStream.on(event: .errorOccurred) {
         print("baz")
     }
-    
-    teoStream.on(event: .endOfStream) {
-        print("bar")
-    }
-    
+	
+	/// Associate a callback with the endOfStream event on teoStream and store its uuid.
+	let boo = teoStream.on(event: .endOfStream) {
+		print("boo")
+	}
+
+	teoStream.on(event: .endOfStream) {
+		print("bar")
+	}
+	
+	/// remove boo handler again by setting its associated (via the uuid) handler to nil.
+	teoStream.on(event: .endOfStream, handlerUuid: boo, handler: nil)
+	
     teoStream.schedule(in: .main, forMode: .defaultRunLoopMode)
     teoStream.open()
+	
+	/// The ppipe function will add its own event handlers to teoStream without overriding
+	/// the ones we've already added.
     ppipe(stream: teoStream)
-    
-    teoStream.on(event: .endOfStream, handlerUuid: oc, handler: nil)
-    //    wtfStream.on(event: .openCompleted, handler: nil)
     
 }
 
 func tarStreamWriter() {
+	
+	/// Path to some local file we want to read from.
     let path = "/Users/teo/tmp/hej.txt"
     //	let path = "/Users/teo/tmp/russell.txt"
+	
     let url = URL(fileURLWithPath: path)
     print("streamwrite got url \(url)")
     
-    guard let dat = "WTHFook".data(using: .ascii) else { return }
+    guard let dat = "WTHFook".data(using: .ascii) else { fatalError("Error: Invalid string!") }
     let wtfStream = InputStream(data: dat)
-    guard let readStream = InputStream(url: url) else { return }
+	
+	/// Make a read stream from the url.
+    guard let readStream = InputStream(url: url) else { fatalError("Error: Invalid url!") }
     
-    let tar = TarStream()
+    let tar = Tar()
     let archive = tar.archive()
     
     // This will add an entry to the archive but won't finalize it.
@@ -104,37 +126,14 @@ func tarStreamWriter() {
     if let writeStream = OutputStream(toFileAtPath: "/Users/teo/tmp/archive.tar", append: false) {
         tarStr.pipe(into: writeStream) { exit(EXIT_SUCCESS) }
     }
-    
+    /// Check the archive.tar file with an external tar utility for confirmation.
 }
 
-extension Data {
-    func hexEncodedString() -> String {
-        return map { String(format: "%02hhx, ", $0) }.joined()
-    }
-}
 
-func ppipe(stream: InputStream) {
-    var data = [UInt8]()
-    
-    stream.on(event: .endOfStream) {
-        print("Done with the stream")
-        let hexdat = Data(data)
-        print("The data (\(data.count)) is: \(hexdat.hexEncodedString())")
-        exit(EXIT_SUCCESS)
-    }
-    
-    stream.on(event: .hasBytesAvailable){
-        
-        let streamBuf: [UInt8] = Array(repeating: 0, count: 512)
-        let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
-        
-        let bytesRead = stream.read(buf, maxLength: 512)
-        data += streamBuf[0 ..< bytesRead]
-        print("stream reader read \(bytesRead) bytes")
-    }
-}
-
-func testy() {
+/**
+	This function demonstrates piping a string from a read stream into a write stream configured to output to a file.
+**/
+func simplePipe() {
     guard let dat = "Ooh yeah, this seems to work still!".data(using: .ascii) else { return }
     let readStream = InputStream(data: dat)
     
@@ -143,21 +142,31 @@ func testy() {
     }
 }
 
-func tarStreamReader() {
+/**
+	This function reads a tar stream from a chunked http stream (in this case a local IPFS node)
+	and prints the result to stdout.
+**/
+func tarStreamReader(host: String, port: Int, query: String) {
+	
+	/// The url for a query to an IPFS server that returns the data as a tar stream.
     let source = "http://" + host + ":" + String(port) + query
-    guard let url = URL(string: source) else {
-        print("Invalid URL")
-        return
-    }
+
+    guard let url = URL(string: source) else { fatalError("Invalid URL") }
+	
+	/// 1) Make an httpStreamer and pass it the url from which to read from.
     let httpStreamer = HttpStream()
+	
 	guard let readStream = httpStreamer.getReadStream(for: url) else { fatalError("Could not get read stream.") }
-    let tarParser = TarStream()
+	
+	/// 2) Make a tar stream parser and configure its entry handler and end handler.
+	let tarParser = Tar()
     
     /// The entry handler is called with the found header and a stream containing the
-    /// data the header refers to. The nextEntry callback is called when the entry handler
+    /// data the header refers to. The nextEntry callback must be called when the entry handler
     /// is done and wants to initiate the reading of any next entries.
     tarParser.setEntryHandler { (header: TarHeader, stream: InputStream, nextEntry: @escaping () -> Void) in
-        print("Hello! The header is \(header)")
+		
+        print("setEntryHandler: The header is \(header)")
         
         /// Check if we're dealing with a file or a directory
         switch header.fileType {
@@ -196,10 +205,38 @@ func tarStreamReader() {
         exit(EXIT_SUCCESS)
     }
     
-    /// Hook up the streams.
+    /// 3) Connect the read stream with the configured tar stream parser.
     tarParser.setInputStream(tarStream: readStream)
 }
 
+// MARK: Helper functions
+
+extension Data {
+	func hexEncodedString() -> String {
+		return map { String(format: "%02hhx, ", $0) }.joined()
+	}
+}
+
+func ppipe(stream: InputStream) {
+	var data = [UInt8]()
+	
+	stream.on(event: .endOfStream) {
+		print("Done with the stream")
+		let hexdat = Data(data)
+		print("The data (\(data.count)) is: \(hexdat.hexEncodedString())")
+		exit(EXIT_SUCCESS)
+	}
+	
+	stream.on(event: .hasBytesAvailable){
+		
+		let streamBuf: [UInt8] = Array(repeating: 0, count: 512)
+		let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
+		
+		let bytesRead = stream.read(buf, maxLength: 512)
+		data += streamBuf[0 ..< bytesRead]
+		print("stream reader read \(bytesRead) bytes")
+	}
+}
 
 main()
 
