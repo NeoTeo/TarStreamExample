@@ -27,16 +27,74 @@ var teoStream: InputStream!
 
 func main() {
     
-    	tarStreamReader()
-//    tarStreamReader2()
-    //teotest()
-    //	tarStreamWriter()
-    //	testy()
-    
+//    tarStreamReader()
+//    teotest()
+//    tarStreamWriter()
+//    testy()
+    testUntarFile()
     CFRunLoopRun()
 }
 
-
+func testUntarFile() {
+ 
+    let path = "/users/teo/source/apple/osx/tarstreamexample/arch.tar"
+    guard FileManager.default.fileExists(atPath: path) == true else {
+        fatalError("file does not exist!")
+    }
+    let url = URL(fileURLWithPath: path)
+    guard let readStream = InputStream(url: url) else {
+        return
+    }
+    
+    let tarParser = TarStream()
+    
+    /// The entry handler is called with the found header and a stream containing the
+    /// data the header refers to. The nextEntry callback is called when the entry handler
+    /// is done and wants to initiate the reading of any next entries.
+    tarParser.setEntryHandler { (header: TarHeader, stream: InputStream, nextEntry: @escaping () -> Void) in
+        print("Hello! The header is \(header)")
+        
+        /// Check if we're dealing with a file or a directory
+        switch header.fileType {
+        case String(TarHeader.FileTypes.directory.rawValue):
+            print("This is a directory named \(header.fileName)")
+            break
+        default:
+            print("This is not a directory")
+        }
+        
+        /// set handler to be called on end of stream.
+        stream.on(event: .endOfStream) {
+            stream.close()
+            stream.remove(from: .main, forMode: .defaultRunLoopMode)
+            nextEntry()
+        }
+        
+        stream.schedule(in: .main, forMode: .defaultRunLoopMode)
+        stream.open()
+        
+        /// Here we can read the data from the passed in stream.
+        if stream.hasBytesAvailable {
+            let maxLen = Int(header.fileByteSize, radix: 8)!
+            let streamBuf: [UInt8] = Array(repeating: 0, count: maxLen)
+            let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
+            
+            let bytesRead = stream.read(buf, maxLength: maxLen)
+            
+            print("Hello!! The data (\(bytesRead)) is: \(String(bytes: streamBuf, encoding: String.Encoding.utf8))")
+        }
+    }
+    
+    tarParser.endHandler = {
+        exit(EXIT_SUCCESS)
+    }
+    
+    /// Hook up the streams.
+    tarParser.setInputStream(tarStream: readStream)
+    
+    readStream.schedule(in: .main, forMode: .defaultRunLoopMode)
+    readStream.open()
+}
 
 func teotest() {
     guard let dat = "teotest".data(using: .ascii) else { return }
