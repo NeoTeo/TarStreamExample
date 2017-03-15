@@ -14,12 +14,8 @@ import HttpStream
 
 let host = "127.0.0.1"
 let port = 5001
-//let hash = "QmYtvgR9Ckk8k26JPv5fT73tSxdSi4nh4Qd5XNLNmZ8B8L" /// Big mp4 file
-//let hash = "QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o"	/// hello world
-//let hash = "QmSaxNHpo1t843tV6we4rZy527vzqZvrLCk5iUwjnj2pm6"		/// Sherlock Holmes txt
+
 let hash = "QmdScyjK1F8fuoLyW8wyV4rD64dLduUXb2sbRudxWf9Kwj"	/// B Russell txt
-//let hash = "QmW5HrjrmU9R2twGiq9praCtGJTLou323ufPJpUogu5kuM" /// directory with two text files
-//let hash = "QmbTUKre4rFZUCvksbhAKbbMfzGKyb6Kxb9hT342Q9sTBo" /// dir containing dir
 
 let query = "/api/v0/get?arg=\(hash)"
 var myStreamer: HttpStream!
@@ -27,7 +23,7 @@ var teoStream: InputStream!
 
 func main() {
     
-    //testUntarFile()
+//    testUntarFile()
 
 //	tarStreamReader(host: host, port: port, query: query)
 
@@ -36,14 +32,16 @@ func main() {
 //    tarStreamWriter()
     tarStreamWriter2()
 	
-    //	simplePipe()
+//    	simplePipe()
     
     CFRunLoopRun()
 }
 
+/** This function shows how to load an existing tar archive from disk and how to deal with the contents.
+    In this example it simply prints the data to stdout. **/
 func testUntarFile() {
  
-    let path = "/users/teo/source/apple/osx/tarstreamexample/arch.tar"
+    let path = "/users/teo/tmp/archive2.tar"
     guard FileManager.default.fileExists(atPath: path) == true else {
         fatalError("file does not exist!")
     }
@@ -54,13 +52,21 @@ func testUntarFile() {
     
     let tarParser = TarStream()
     
-    /// The entry handler is called with the found header and a stream containing the
-    /// data the header refers to. The nextEntry callback is called when the entry handler
-    /// is done and wants to initiate the reading of any next entries.
+    /// Set up the TarStream's entry and end handlers:
+    
+    /** The entry handler is called with the found header and a stream containing the
+        data the header refers to. We read from the given stream just as we would any stream.
+     
+        The nextEntry block is called when the entry handler is done and wants to
+        initiate the reading of any next entries, which will call setEntryHandler with a new
+        header and stream.
+    **/
     tarParser.setEntryHandler { (header: TarHeader, stream: InputStream, nextEntry: @escaping () -> Void) in
-        print("Hello! The header is \(header)")
         
-        /// Check if we're dealing with a file or a directory
+        print("The header is \(header)")
+        
+        /// In here we can do specific stuff based on header info,
+        /// eg. check if we're dealing with a file or a directory
         switch header.fileType {
         case String(TarHeader.FileTypes.directory.rawValue):
             print("This is a directory named \(header.fileName)")
@@ -71,33 +77,38 @@ func testUntarFile() {
         
         /// set handler to be called on end of stream.
         stream.on(event: .endOfStream) {
+            
+            /// As with regular streams we need to close and remove them from the run loop.
             stream.close()
             stream.remove(from: .main, forMode: .defaultRunLoopMode)
+            
+            /// Signal we're ready to move on to the next entry.
             nextEntry()
         }
-        
-        stream.schedule(in: .main, forMode: .defaultRunLoopMode)
-        stream.open()
-        
-        /// Here we can read the data from the passed in stream.
-        if stream.hasBytesAvailable {
+
+        stream.on(event: .hasBytesAvailable) {
             let maxLen = Int(header.fileByteSize, radix: 8)!
             let streamBuf: [UInt8] = Array(repeating: 0, count: maxLen)
             let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
             
             let bytesRead = stream.read(buf, maxLength: maxLen)
             
-            print("Hello!! The data (\(bytesRead)) is: \(String(bytes: streamBuf, encoding: String.Encoding.utf8))")
+            print("The data (\(bytesRead) bytes) is: \(String(bytes: streamBuf, encoding: String.Encoding.utf8))")
+            print("-----------------------------------------------")
         }
+        
+        stream.schedule(in: .main, forMode: .defaultRunLoopMode)
+        stream.open()
     }
     
     tarParser.endHandler = {
         exit(EXIT_SUCCESS)
     }
     
-    /// Hook up the streams.
+    /// Pass the tar stream parser the input stream and...
     tarParser.setInputStream(tarStream: readStream)
     
+    /// ...schedule & open the input stream.
     readStream.schedule(in: .main, forMode: .defaultRunLoopMode)
     readStream.open()
 }
@@ -142,9 +153,12 @@ func addAndRemoveHandlers() {
 	
 	/// The ppipe function will add its own event handlers to teoStream without overriding
 	/// the ones we've already added.
-    ppipe(stream: teoStream)
-    
+    //ppipe(stream: teoStream)
+    printPipe(stream: teoStream) {
+        exit(EXIT_SUCCESS)
+    }
 }
+
 /**
     Create a tar archive from a stream containing a string. 
 **/
@@ -161,6 +175,7 @@ func tarStreamWriter() {
     // Add an entry to the archive and finalize it.
     archive.addEntry(header: [TarHeader.Field.fileName : "file.txt"], dataStream: readStream)
     archive.closeArchive()
+    
     
     /// Now try to read from the archive.
     guard let tarStr = archive.tarReadStream else { 
@@ -179,13 +194,12 @@ func tarStreamWriter() {
     /// Check the archive.tar file with an external tar utility for confirmation.
 }
 
-/** Create tar entries from file stream and from direct entry.**/
+
+/** 
+    Create a tar archive with multiple entries; from file stream and from direct entry.
+**/
 func tarStreamWriter2() {
 	
-    let group = DispatchGroup.init()
-
-    group.enter()
-
 	/// Path to some local file we want to read from.
     let path = "/Users/teo/tmp/hej.txt"
 	
@@ -194,43 +208,43 @@ func tarStreamWriter2() {
 	/// Make a read stream from the url.
     guard let readStream = InputStream(url: url) else { fatalError("Error: Invalid url!") }
     
+    
     let tar = TarStream()
     let archive = tar.archive()
     
     // Add an entry to the archive and stream the content of the readStream into it.
-    //archive.addEntry(header: [TarHeader.Field.fileName : "ollah.txt"], dataStream: readStream)
+    archive.addEntry(header: [.fileName : "ollah.txt"], dataStream: readStream)
     //archive.closeArchive()
-    
+
     /// Add entry to archive and provide a block that is called when the entry is finalized with entry.end()
     /// Problematic that we need to provide the file size up front?
-    var entry: TarEntry = archive.addEntry(header: [.fileName : "my-testes.txt", .fileByteSize : "11"]) {
+    /// Remember that the fileByteSize must be in octal, so ex. 11 bytes is 13
+    var entry: TarEntry = archive.addEntry(header: [.fileName : "my-testes.txt", .fileByteSize : "13"]) {
 
+        /// This is the entry end handler. 
+        /// In this case we use it to close the archive completely.
         print("TSE: Closing archive.")
         archive.closeArchive()
-
-        group.leave()
     }
     
     entry.write(data: "Hello")
     entry.write(data: " ")
     entry.write(data: "World")
-    print("TSE: so far...")
     entry.end()
-
-    group.wait()
-
+  
     /// Now try to read from the archive.
     guard let tarStr = archive.tarReadStream else { 
         fatalError("Error: not able to get a tar read stream from archive.")
     }
     print("TSE: tar stream has bytes available \(tarStr.hasBytesAvailable)")
-    //	ppipe(stream: tarStr)
-    
-    guard let writeStream = OutputStream(toFileAtPath: "/Users/teo/tmp/archive.tar", append: false) else {
+    //ppipe(stream: tarStr)
+
+    guard let writeStream = OutputStream(toFileAtPath: "/Users/teo/tmp/archive2.tar", append: false) else {
         fatalError("Error: failed to make output stream")
     }
     print("TSE: About to pipe tarStr into writeStream.")
     tarStr.pipe(into: writeStream) { exit(EXIT_SUCCESS) }
+    
     /// Check the archive.tar file with an external tar utility for confirmation.
 }
 
@@ -238,7 +252,7 @@ func tarStreamWriter2() {
 	This function demonstrates piping a string from a read stream into a write stream configured to output to a file.
 **/
 func simplePipe() {
-    guard let dat = "Ooh yeah, this seems to work still!".data(using: .ascii) else { return }
+    guard let dat = "This text is appended too.".data(using: .ascii) else { return }
     let readStream = InputStream(data: dat)
     
     if let writeStream = OutputStream(toFileAtPath: "/Users/teo/tmp/outstream.txt", append: true) {
@@ -270,16 +284,7 @@ func tarStreamReader(host: String, port: Int, query: String) {
     /// is done and wants to initiate the reading of any next entries.
     tarParser.setEntryHandler { (header: TarHeader, stream: InputStream, nextEntry: @escaping () -> Void) in
 		
-        print("setEntryHandler: The header is \(header)")
-        
-        /// Check if we're dealing with a file or a directory
-        switch header.fileType {
-        case String(TarHeader.FileTypes.directory.rawValue):
-            print("This is a directory named \(header.fileName)")
-            break
-        default:
-            print("This is not a directory")
-        }
+        print("The header is \(header)")
         
         /// set handler to be called on end of stream.
         stream.on(event: .endOfStream) {
@@ -290,22 +295,15 @@ func tarStreamReader(host: String, port: Int, query: String) {
         
         stream.schedule(in: .main, forMode: .defaultRunLoopMode)
         stream.open()
-        
-        /// Here we can read the data from the passed in stream.
-        if stream.hasBytesAvailable {
-            let maxLen = Int(header.fileByteSize, radix: 8)! // crash for now ?? 0
-            let streamBuf: [UInt8] = Array(repeating: 0, count: maxLen)
-            let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
-            
-            let bytesRead = stream.read(buf, maxLength: maxLen)
-            
-            print("Hello!! The data (\(bytesRead)) is: \(String(bytes: streamBuf, encoding: String.Encoding.utf8))")
+ 
+        printPipe(stream: stream) {
+            print("All done!")
         }
     }
     
     tarParser.endHandler = {
-        httpStreamer.finish()
         
+        httpStreamer.finish()
         exit(EXIT_SUCCESS)
     }
     
@@ -321,25 +319,48 @@ extension Data {
 	}
 }
 
-func ppipe(stream: InputStream) {
+func printPipe(stream: InputStream, completion: VoidFunc? = nil) {
 	var data = [UInt8]()
+    
+    func append(from stream: InputStream, onto olddata: [UInt8]) -> [UInt8] {
+        let streamBuf: [UInt8] = Array(repeating: 0, count: 512)
+        let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
+        
+        let bytesRead = stream.read(buf, maxLength: 512)
+        let data = olddata + streamBuf[0 ..< bytesRead]
+        
+        return data
+    }
 	
+    stream.on(event: .openCompleted) {
+        print("ppipe open")
+    }
+    
 	stream.on(event: .endOfStream) {
-		print("Done with the stream")
-		let hexdat = Data(data)
-		print("The data (\(data.count)) is: \(hexdat.hexEncodedString())")
-		exit(EXIT_SUCCESS)
+        
+		print("End of stream.")
+        let datacount = data.count
+        if let stringdat = String(bytes: data, encoding: String.Encoding.utf8) {
+            
+            print("The data (\(datacount) bytes) is:")
+            print(stringdat)
+        } else {
+            
+            let hexdat = Data(data)
+            print("The data (\(datacount)) is:")
+            print(hexdat.hexEncodedString())
+        }
+		
+        completion?()
 	}
 	
 	stream.on(event: .hasBytesAvailable) {
-		
-		let streamBuf: [UInt8] = Array(repeating: 0, count: 512)
-		let buf = UnsafeMutablePointer<UInt8>(mutating: streamBuf)
-		
-		let bytesRead = stream.read(buf, maxLength: 512)
-		data += streamBuf[0 ..< bytesRead]
-		print("stream reader read \(bytesRead) bytes")
+        data = append(from: stream, onto: data)
 	}
+    
+    if stream.hasBytesAvailable {
+        data = append(from: stream, onto: data)
+    }
 }
 
 main()
