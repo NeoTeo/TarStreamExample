@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import CallbackStreams
 import TarStream
 import HttpStream
 
@@ -31,7 +30,7 @@ func main() {
 	
 //    tarStreamWriter()
     tarStreamWriter2()
-	
+//	tarStreamWriter3()
 //    	simplePipe()
     
     CFRunLoopRun()
@@ -247,6 +246,39 @@ func tarStreamWriter2() {
     
     /// Check the archive.tar file with an external tar utility for confirmation.
 }
+
+
+func tarStreamWriter3() {
+
+    /// Set up a read stream and feed it a string as input.
+    guard let dat = "A simple stream of characters.".data(using: .ascii) else { fatalError("Error: Invalid string!") }
+    let readStream = InputStream(data: dat)
+    
+    /// Create a tar stream instance and get a new archive from it.
+    let tar = TarStream()
+    let archive = tar.archive()
+    
+    // Add an entry to the archive and finalize it.
+    archive.addEntry(header: [TarHeader.Field.fileName : "file.txt"], dataStream: readStream)
+    archive.closeArchive()
+    
+    
+    /// Now try to read from the archive.
+    guard let tarStr = archive.tarReadStream else {
+        fatalError("Error: cannot read archive.")
+    }
+    
+    print("tar stream has bytes available \(tarStr.hasBytesAvailable)")
+    
+    /// Create write stream to stdout and pipe the archive to it.
+    guard let writeStream = OutputStream(toFileAtPath: "/dev/stdout", append: false) else {
+        fatalError("Error: cannot create output file")
+    }
+    
+    tarStr.pipe(into: writeStream) { exit(EXIT_SUCCESS) }
+}
+
+
 
 /**
 	This function demonstrates piping a string from a read stream into a write stream configured to output to a file.
