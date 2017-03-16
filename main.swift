@@ -29,8 +29,8 @@ func main() {
 //    addAndRemoveHandlers()
     
 //    tarStreamWriter()
-    tarStreamWriter2()
-//  tarStreamWriter3()
+//    tarStreamWriter2()
+  tarStreamWriter3()
 //      simplePipe()
     
     CFRunLoopRun()
@@ -262,13 +262,8 @@ func tarStreamWriter3() {
     archive.addEntry(header: [TarHeader.Field.fileName : "file.txt"], dataStream: readStream)
     archive.closeArchive()
     
-    
     /// Now try to read from the archive.
-    guard let tarStr = archive.tarReadStream else {
-        fatalError("Error: cannot read archive.")
-    }
-    
-    print("tar stream has bytes available \(tarStr.hasBytesAvailable)")
+    guard let tarStr = archive.tarReadStream else { fatalError("Error: cannot read archive.") }
     
     /// Create write stream to stdout and pipe the archive to it.
     guard let writeStream = OutputStream(toFileAtPath: "/dev/stdout", append: false) else {
